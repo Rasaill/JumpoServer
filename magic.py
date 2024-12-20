@@ -3,6 +3,32 @@ import re
 import win32com.client
 from bs4 import BeautifulSoup  # Install using 'pip install beautifulsoup4'
 
+def extract_password_from_html(html_content):
+    try:
+        # Parse HTML using BeautifulSoup
+        soup = BeautifulSoup(html_content, 'html.parser')
+
+        # Find the element containing "Password :"
+        password_element = soup.find(string=re.compile(r"Password\s*:"))
+        if password_element:
+            # Look for siblings or next elements after "Password :"
+            parent = password_element.parent
+            password_text = ""
+
+            # Extract all text following "Password :"
+            for sibling in parent.find_all_next(string=True):
+                password_text += sibling.strip()
+                # Stop if we hit a break or tag boundary
+                if sibling.parent.name in ['br', 'p', 'div']:
+                    break
+
+            # Clean up the password text
+            password_text = re.sub(r"^Password\s*:\s*", "", password_text).strip()
+            return password_text
+    except Exception as e:
+        print(f"Error parsing HTML content: {e}")
+    return None
+
 def extract_credentials_from_msg(file_path):
     try:
         # Initialize Outlook Application
@@ -11,22 +37,10 @@ def extract_credentials_from_msg(file_path):
         msg = outlook.OpenSharedItem(file_path)
         # Access the HTML body
         html_content = msg.HTMLBody
-
         if html_content:
-            # Parse HTML with BeautifulSoup
-            soup = BeautifulSoup(html_content, 'html.parser')
-
-            # Find the exact HTML containing "Password :"
-            password_element = soup.find(string=re.compile(r"Password\s*:"))
-            if password_element:
-                # Get the full password text, including following siblings
-                password_line = password_element.parent.get_text(strip=True)
-
-                # Extract the password using regex
-                password_match = re.search(r"Password\s*:\s*(.+)", password_line)
-                if password_match:
-                    password = password_match.group(1).strip()
-                    return password
+            # Extract the password from HTML
+            password = extract_password_from_html(html_content)
+            return password
         return None
     except Exception as e:
         print(f"Error processing {file_path}: {e}")
