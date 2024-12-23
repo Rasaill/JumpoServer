@@ -46,22 +46,12 @@ MissingAccounts AS (
     WHERE
         p.ServiceTypeMapped IS NULL
 )
--- Final output: Check for missing service types
+-- Final output: Show missing accounts only
 SELECT 
     Environment,
     Number,
-    ServiceType,
-    CASE 
-        WHEN EXISTS (
-            SELECT 1 
-            FROM MissingAccounts 
-            WHERE Environment = ec.Environment 
-              AND Number = ec.Number
-        )
-        THEN 'Missing'
-        ELSE 'Complete'
-    END AS Status
+    ServiceType
 FROM
-    ExpectedCombinations ec
+    MissingAccounts
 ORDER BY
     Environment, Number, ServiceType;
