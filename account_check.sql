@@ -3,7 +3,12 @@ WITH ParsedData AS (
     SELECT
         ServiceAccountName,
         serviceAccountType,
-        SUBSTRING(ServiceAccountName, CHARINDEX('_', ServiceAccountName) + 1, 1) AS Environment, -- Extract 'd', 'q', 'p'
+        CASE 
+            WHEN Environment = 'DEV' THEN 'd'
+            WHEN Environment = 'PRD' THEN 'p'
+            WHEN Environment = 'QA' THEN 'q'
+            ELSE NULL
+        END AS EnvironmentMapped, -- Map 'DEV', 'PRD', 'QA' to 'd', 'p', 'q'
         RIGHT(ServiceAccountName, 4) AS Number, -- Extract the 4-digit number
         CASE 
             WHEN serviceAccountType = 'Agent' THEN 'sa'
@@ -19,7 +24,7 @@ WITH ParsedData AS (
 ExpectedCombinations AS (
     -- Define all expected combinations of environment, number, and service type
     SELECT DISTINCT
-        p.Environment,
+        p.EnvironmentMapped AS Environment,
         p.Number,
         t.ServiceTypeMapped AS ServiceType
     FROM 
@@ -35,7 +40,7 @@ MissingAccounts AS (
     FROM
         ExpectedCombinations e
     LEFT JOIN ParsedData p
-        ON e.Environment = p.Environment
+        ON e.Environment = p.EnvironmentMapped
         AND e.Number = p.Number
         AND e.ServiceType = p.ServiceTypeMapped
     WHERE
