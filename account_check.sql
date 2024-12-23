@@ -1,21 +1,30 @@
 WITH ParsedData AS (
-    -- Extract environment, service_type, and number from the account name
+    -- Extract environment and number from the service account name
     SELECT
-        name AS ServiceAccount,
-        SUBSTRING(name, CHARINDEX('_', name) + 1, 1) AS Environment,  -- Extract 'd', 'q', 'p'
-        SUBSTRING(name, CHARINDEX('_', name, CHARINDEX('_', name) + 1) + 1, 2) AS ServiceType, -- Extract 'is', 'ft', etc.
-        RIGHT(name, 4) AS Number -- Extract the 4-digit number
+        ServiceAccountName,
+        serviceAccountType,
+        SUBSTRING(ServiceAccountName, CHARINDEX('_', ServiceAccountName) + 1, 1) AS Environment, -- Extract 'd', 'q', 'p'
+        RIGHT(ServiceAccountName, 4) AS Number, -- Extract the 4-digit number
+        CASE 
+            WHEN serviceAccountType = 'Agent' THEN 'sa'
+            WHEN serviceAccountType = 'Browser' THEN 'sb'
+            WHEN serviceAccountType = 'SSIS' THEN 'is'
+            WHEN serviceAccountType = 'FullText' THEN 'ft'
+            WHEN serviceAccountType = 'Engine' THEN 'sq'
+            ELSE NULL
+        END AS ServiceTypeMapped -- Map serviceAccountType to corresponding type
     FROM
         YourTable
 ),
 ExpectedCombinations AS (
-    -- Define all expected combinations of service_type
+    -- Define all expected combinations of environment, number, and service type
     SELECT DISTINCT
-        Environment,
-        Number,
-        ServiceType
-    FROM ParsedData
-    CROSS APPLY (VALUES ('is'), ('ft'), ('sa'), ('sb'), ('sq')) AS Expected(ServiceType)
+        p.Environment,
+        p.Number,
+        t.ServiceTypeMapped AS ServiceType
+    FROM 
+        ParsedData p
+    CROSS APPLY (VALUES ('sa'), ('sb'), ('is'), ('ft'), ('sq')) AS t(ServiceTypeMapped)
 ),
 MissingAccounts AS (
     -- Find missing combinations by comparing actual and expected
@@ -28,20 +37,26 @@ MissingAccounts AS (
     LEFT JOIN ParsedData p
         ON e.Environment = p.Environment
         AND e.Number = p.Number
-        AND e.ServiceType = p.ServiceType
+        AND e.ServiceType = p.ServiceTypeMapped
     WHERE
-        p.ServiceType IS NULL
+        p.ServiceTypeMapped IS NULL
 )
--- Output missing groups or confirm all present
+-- Final output: Check for missing service types
 SELECT 
     Environment,
     Number,
     ServiceType,
-    CASE WHEN EXISTS (SELECT 1 FROM MissingAccounts WHERE Environment = m.Environment AND Number = m.Number)
+    CASE 
+        WHEN EXISTS (
+            SELECT 1 
+            FROM MissingAccounts 
+            WHERE Environment = ec.Environment 
+              AND Number = ec.Number
+        )
         THEN 'Missing'
         ELSE 'Complete'
     END AS Status
 FROM
-    ExpectedCombinations m
+    ExpectedCombinations ec
 ORDER BY
     Environment, Number, ServiceType;
