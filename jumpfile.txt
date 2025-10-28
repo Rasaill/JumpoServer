@@ -1,1 +1,26 @@
-<?xml version="1.0" encoding="utf-8"?><feed xml:base="https://pmicloud.sharepoint.com/sites/ManilaInfraCore/_api/" xmlns="http://www.w3.org/2005/Atom" xmlns:d="http://schemas.microsoft.com/ado/2007/08/dataservices" xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata" xmlns:georss="http://www.georss.org/georss" xmlns:gml="http://www.opengis.net/gml"><id>b7ab7237-b182-42bc-bacd-4d63c7fdbc61</id><title /><updated>2025-10-28T21:04:10Z</updated><author><name /></author></feed>
+$siteUrl = "https://pmicloud.sharepoint.com/sites/ManilaInfraCore"
+$listName = "EdgeAPITest"
+
+# Step 1: Get Authentication Token (ContextInfo)
+$contextResponse = Invoke-RestMethod -Uri "$siteUrl/_api/contextinfo" -Method POST -Headers @{
+    "Accept" = "application/json;odata=verbose"
+}
+$token = $contextResponse.d.GetContextWebInformation.FormDigestValue
+
+# Step 2: Create the new item
+$body = @{
+    '__metadata' = @{ 'type' = 'SP.Data.EdgeAPITestListItem' }
+    'Title' = 'REST Write Test from PowerShell'
+} | ConvertTo-Json
+
+$response = Invoke-RestMethod `
+    -Uri "$siteUrl/_api/web/lists/getbytitle('$listName')/items" `
+    -Method POST `
+    -Headers @{
+        "Accept" = "application/json;odata=verbose"
+        "Content-Type" = "application/json;odata=verbose"
+        "X-RequestDigest" = $token
+    } `
+    -Body $body
+
+$response
