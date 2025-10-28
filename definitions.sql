@@ -249,5 +249,45 @@ ALTER TABLE [dbo].[ssasInventory] CHECK CONSTRAINT [FK_ssasInventory_Server]
 GO
 
 
+USE [mssql_dbaas_inventory]
+GO
+
+/****** Object:  Table [Tracking].[ServerChangeLog]    Script Date: 10/28/2025 9:44:07 AM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [Tracking].[ServerChangeLog](
+	[ChangeID] [bigint] IDENTITY(1,1) NOT NULL,
+	[ServerName] [nvarchar](30) NOT NULL,
+	[Environment] [char](3) NOT NULL,
+	[LocationID] [int] NOT NULL,
+	[SqlVersion] [nvarchar](10) NOT NULL,
+	[ServiceName] [nvarchar](50) NOT NULL,
+	[LifecycleState] [char](1) NOT NULL,
+	[OperationType] [char](6) NOT NULL,
+	[CreatedAt] [datetime2](3) NOT NULL,
+	[CreatedBy] [nvarchar](50) NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[ChangeID] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [SO]
+) ON [SO]
+GO
+
+ALTER TABLE [Tracking].[ServerChangeLog] ADD  CONSTRAINT [DF_ServerChangeLog_CreatedAt]  DEFAULT (sysutcdatetime()) FOR [CreatedAt]
+GO
+
+ALTER TABLE [Tracking].[ServerChangeLog] ADD  CONSTRAINT [DF_ServerChangeLog_CreatedBy]  DEFAULT (suser_sname()) FOR [CreatedBy]
+GO
+
+ALTER TABLE [Tracking].[ServerChangeLog]  WITH CHECK ADD  CONSTRAINT [CK_ServerChangeLog_OperationType] CHECK  (([OperationType]='UPDATE' OR [OperationType]='DELETE' OR [OperationType]='INSERT'))
+GO
+
+ALTER TABLE [Tracking].[ServerChangeLog] CHECK CONSTRAINT [CK_ServerChangeLog_OperationType]
+GO
+
 
 
