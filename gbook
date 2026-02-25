@@ -1,0 +1,231 @@
+SQL Server Upgrade Guide
+
+Migration from SQL Server 2016 to SQL Server 2019 / 2022
+
+Dedicated Instances with Always On Availability Groups
+
+⸻
+
+Overview
+
+This article describes the recommended approach for upgrading Dedicated SQL Server instances from SQL Server 2016 to a newer supported version (SQL Server 2019 or preferably SQL Server 2022) in environments using Always On Availability Groups with a listener.
+
+The migration approach is based on a side-by-side upgrade strategy, which:
+	•	Minimizes downtime during final cutover
+	•	Preserves the existing listener connectivity
+	•	Maintains infrastructure consistency
+	•	Reduces operational and upgrade risk
+
+This guide applies specifically to the Dedicated Instance service model, where customers retain administrative control over SQL Server instance-level configuration.
+
+⸻
+
+Migration Approach
+
+Instead of performing an in-place upgrade, the recommended approach is to:
+	1.	Provision new SQL Server instances with the target version.
+	2.	Align infrastructure configuration with the existing environment.
+	3.	Add the new instances to the existing Availability Group.
+	4.	Synchronize databases before cutover.
+	5.	Perform a controlled failover to the upgraded environment.
+
+This approach ensures the existing listener remains unchanged, allowing applications to reconnect without connection string modifications.
+
+⸻
+
+Prerequisites (Customer Actions)
+
+Request New SQL Server Instances
+
+Customers should request:
+	•	Two Dedicated SQL Server instances
+	•	Target version: SQL Server 2019 or preferably SQL Server 2022
+
+Recommended configuration:
+	•	Keep the same instance name:
+	•	Default instance → MSSQLSERVER
+	•	Named instance → reuse the same instance name
+
+This simplifies migration and reduces post-upgrade adjustments.
+
+⸻
+
+Submit Migration Request (ServiceNow)
+
+After provisioning the new instances, submit a ServiceNow request including:
+
+Current environment
+	•	Existing SQL Server 2016 instance names
+	•	Availability Group name
+	•	Listener DNS name used by applications
+
+Target environment
+	•	Newly provisioned instances
+	•	Preferred listener/CNAME details if changes are planned
+
+Business context
+	•	Project or business unit ownership
+	•	Preferred maintenance window for failover
+
+(Insert ServiceNow request template or link here.)
+
+⸻
+
+Responsibility Matrix
+
+Activity
+Database Platform Support Team
+Customer
+Provision new SQL Server instances
+I
+R
+Provide migration request details
+I
+R
+Infrastructure sizing alignment (CPU/RAM/storage)
+R
+I
+Availability Group configuration
+R
+I
+Database synchronization setup
+R
+I
+Migration of SQL logins
+I
+R
+Migration of SQL Agent jobs
+I
+R
+Migration of linked servers
+I
+R
+Migration of SSIS packages / integrations
+I
+R
+Migration of custom server-level configuration
+I
+R
+Application testing
+I
+R
+Maintenance window definition
+C
+R
+Final failover execution
+R
+I
+Post-failover validation
+C
+R
+Decommissioning legacy SQL Server 2016 instances
+I
+R
+
+Legend
+	•	R – Responsible: Performs the activity
+	•	C – Consulted: Provides input or coordination
+	•	I – Informed: Kept informed about progress
+
+⸻
+
+Infrastructure Preparation
+
+Once the migration request is received, the Database Platform Support Team will:
+
+Infrastructure Alignment
+	•	Match CPU and memory allocation
+	•	Replicate storage layout
+	•	Validate performance characteristics
+
+Availability Group Preparation
+	•	Join new instances to the Availability Group
+	•	Configure database synchronization
+	•	Monitor replication health and readiness
+
+Databases are typically synchronized before the planned cutover.
+
+⸻
+
+Final Cutover Process
+
+The final migration phase consists of:
+	1.	Planned application downtime.
+	2.	Suspension of all write activity to databases.
+	3.	Controlled failover to upgraded SQL Server instances.
+	4.	Validation of application functionality.
+
+Because the listener remains unchanged:
+	•	Applications usually reconnect automatically.
+	•	Downtime is limited to the maintenance window.
+
+⸻
+
+Failback and Rollback Considerations
+
+No Standard Failback
+
+After failover to SQL Server 2019/2022:
+	•	Failback to SQL Server 2016 is not supported.
+	•	Database internal version changes prevent backward synchronization.
+	•	This should be considered a one-way upgrade.
+
+⸻
+
+Emergency Rollback Scenario (Limited Conditions)
+
+A rollback may be technically possible only if:
+	•	Failover has completed, but
+	•	No production write activity has resumed.
+
+In this scenario:
+	•	SQL Server 2016 databases remain in restoring state.
+	•	They can be removed from the Availability Group.
+	•	Database recovery can be performed manually.
+	•	The original Availability Group can be rebuilt if required.
+
+This option:
+	•	Is operationally complex
+	•	Is not guaranteed
+	•	Should only be treated as an emergency fallback
+
+⸻
+
+Important Technical Note
+
+Even without application writes, SQL Server may generate internal log records related to:
+	•	Statistics updates
+	•	Metadata adjustments
+	•	Background system processes
+
+If such changes occur, rollback may no longer be feasible.
+
+⸻
+
+Customer Responsibilities Before Cutover
+
+Customers should ensure:
+	•	All instance-level objects are migrated:
+	•	Logins
+	•	SQL Agent jobs
+	•	Linked servers
+	•	SSIS packages
+	•	Credentials and server-level configurations
+	•	Applications are tested against the new SQL Server version.
+	•	Deprecated features are reviewed.
+	•	Operational readiness is confirmed before cutover.
+
+⸻
+
+Summary
+
+This migration approach provides:
+	•	Controlled upgrade from SQL Server 2016
+	•	Reduced operational risk
+	•	Minimal downtime migration capability
+	•	Infrastructure consistency
+	•	Continued use of existing listener connectivity
+
+Proper preparation on both the platform and customer sides is essential for a successful migration.
+
+⸻
