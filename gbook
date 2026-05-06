@@ -1,231 +1,174 @@
-SQL Server Upgrade Guide
-
-Migration from SQL Server 2016 to SQL Server 2019 / 2022
-
-Dedicated Instances with Always On Availability Groups
-
-⸻
+SQL Server VM Review Guide
 
 Overview
 
-This article describes the recommended approach for upgrading Dedicated SQL Server instances from SQL Server 2016 to a newer supported version (SQL Server 2019 or preferably SQL Server 2022) in environments using Always On Availability Groups with a listener.
+This guide describes practical checks and good practices for SQL Server virtual machines hosted on VMware. It focuses on settings that are worth reviewing because they can affect performance, stability, and supportability. These points are especially useful during troubleshooting and performance reviews, but they are also good to keep in mind when building or validating a SQL Server VM.
+1. Check whether the VM looks oversized
 
-The migration approach is based on a side-by-side upgrade strategy, which:
-	•	Minimizes downtime during final cutover
-	•	Preserves the existing listener connectivity
-	•	Maintains infrastructure consistency
-	•	Reduces operational and upgrade risk
+One of the first things to check during review is whether the VM simply became too large over time. This often happens when CPU or RAM was added during an earlier incident and nobody later checked whether the extra resources were still justified. VMware recommends right-sizing virtual machines and keeping them within as few NUMA nodes as practical, because that usually improves CPU-to-memory locality and reduces latency.  
 
-This guide applies specifically to the Dedicated Instance service model, where customers retain administrative control over SQL Server instance-level configuration.
+Typical finding
+A SQL Server VM originally had 16 vCPUs. At some point performance complaints appeared, so the VM was increased to 24 or 32 vCPUs. Months later, nobody remembers why the increase was made, and the VM is still large even though CPU may not have been the real bottleneck. VMware explicitly recommends right-sizing instead of carrying over physical-server habits of overprovisioning.  
 
-⸻
+What to check
+Look at the current number of vCPUs and the amount of RAM and ask a simple question: does this still look intentional, or did the VM just grow over time?
 
-Migration Approach
+2. Check CPU layout, not only CPU count
 
-Instead of performing an in-place upgrade, the recommended approach is to:
-	1.	Provision new SQL Server instances with the target version.
-	2.	Align infrastructure configuration with the existing environment.
-	3.	Add the new instances to the existing Availability Group.
-	4.	Synchronize databases before cutover.
-	5.	Perform a controlled failover to the upgraded environment.
+Do not look only at the total number of vCPUs. Also check how those vCPUs are split into sockets and cores. VMware says that, as a rule of thumb, the cores-per-socket ratio should reflect the hardware configuration, while also taking care to expose a sensible NUMA topology.  
 
-This approach ensures the existing listener remains unchanged, allowing applications to reconnect without connection string modifications.
+Typical finding
+The ESXi host shows:
 
-⸻
+* 1 physical socket
+* 32 cores per socket
 
-Prerequisites (Customer Actions)
+The SQL Server VM has 24 vCPUs, but it is configured as:
 
-Request New SQL Server Instances
+* 12 sockets x 2 cores
 
-Customers should request:
-	•	Two Dedicated SQL Server instances
-	•	Target version: SQL Server 2019 or preferably SQL Server 2022
+This usually does not look like a sensible layout for SQL Server. It creates an artificial socket structure inside the guest that does not resemble the host. In most cases, fewer sockets with more cores is the better direction, provided the final layout still makes sense for the host.  
 
-Recommended configuration:
-	•	Keep the same instance name:
-	•	Default instance → MSSQLSERVER
-	•	Named instance → reuse the same instance name
+Why it matters
+SQL Server is sensitive to CPU and memory layout more than a simple application server. VMware’s guidance says VMs should fit within as few NUMA nodes as possible, and Microsoft says SQL Server automatically creates soft-NUMA when it detects more than eight physical cores per socket.  
 
-This simplifies migration and reduces post-upgrade adjustments.
+Where to check in vCenter
+Host → Configure → Hardware → Overview
+VM → Edit Settings → CPU
 
-⸻
+3. Do not assume that more CPU will fix performance
 
-Submit Migration Request (ServiceNow)
+A common troubleshooting mistake is to assume that a slow system simply needs more CPU. VMware warns that over-allocating vCPUs can add overhead, and its SQL Server guidance recommends keeping VM sizing practical instead of assuming bigger always means faster. VMware also recommends, for initial high-performance sizing, that the total vCPUs assigned across VMs not exceed the total number of physical cores on the host.  
 
-After provisioning the new instances, submit a ServiceNow request including:
+Typical finding
+A SQL Server VM has a high vCPU count already, but users still report inconsistent response times. The VM is increased again, yet performance does not clearly improve. This is often a sign that the real issue was elsewhere, or that the larger VM is now less efficient.  
 
-Current environment
-	•	Existing SQL Server 2016 instance names
-	•	Availability Group name
-	•	Listener DNS name used by applications
+What to check
+If a VM was enlarged in the past, verify whether that change was based on evidence such as real CPU pressure, not just on a general feeling that “the server was slow.”
 
-Target environment
-	•	Newly provisioned instances
-	•	Preferred listener/CNAME details if changes are planned
+4. Review CPU and memory together
 
-Business context
-	•	Project or business unit ownership
-	•	Preferred maintenance window for failover
+During troubleshooting, do not review CPU in isolation. VMware’s SQL Server guide explicitly discusses memory-wide VMs and explains that memory size can affect whether the overall VM layout is efficient, even when the vCPU count alone looks acceptable. The guide also shows that automatic vNUMA can create an unbalanced topology for memory-wide VMs.  
 
-(Insert ServiceNow request template or link here.)
+Typical finding
+The CPU count does not look extreme, so at first glance the VM appears fine. But the VM also has a very large amount of RAM assigned. The final result may still be a VM layout that is less efficient than expected for SQL Server. VMware’s figures and discussion on memory-wide VMs highlight exactly this kind of case.  
 
-⸻
+What to remember
+Do not ask only, “How many vCPUs does this VM have?”
+Also ask, “Does the combination of CPU and memory still make sense?”
 
-Responsibility Matrix
+5. Check CPU Hot Add carefully
 
-Activity
-Database Platform Support Team
-Customer
-Provision new SQL Server instances
-I
-R
-Provide migration request details
-I
-R
-Infrastructure sizing alignment (CPU/RAM/storage)
-R
-I
-Availability Group configuration
-R
-I
-Database synchronization setup
-R
-I
-Migration of SQL logins
-I
-R
-Migration of SQL Agent jobs
-I
-R
-Migration of linked servers
-I
-R
-Migration of SSIS packages / integrations
-I
-R
-Migration of custom server-level configuration
-I
-R
-Application testing
-I
-R
-Maintenance window definition
-C
-R
-Final failover execution
-R
-I
-Post-failover validation
-C
-R
-Decommissioning legacy SQL Server 2016 instances
-I
-R
+The fact that CPU Hot Add is enabled is not automatically the main problem. The more important question is whether CPU was actually changed while the VM was running. VMware says that, for older Windows and vSphere combinations, customers should not enable CPU hot plug as a general practice, especially for VMs that benefit from vNUMA, and that right-sizing is a better choice than relying on CPU hot plug. VMware also says this should be a case-by-case decision and should not simply be enabled in a SQL Server VM template.  
 
-Legend
-	•	R – Responsible: Performs the activity
-	•	C – Consulted: Provides input or coordination
-	•	I – Informed: Kept informed about progress
+Typical finding
+A SQL Server VM inherits CPU Hot Add from a generic template. That alone may not cause an immediate issue. But if CPU was later increased online and used as a normal resizing method, that is much more relevant during review than the checkbox itself.  
 
-⸻
+Team guideline
+For SQL Server VMs, CPU changes should normally be planned and applied while the VM is powered off. CPU Hot Add should not be treated as the standard way of resizing a production SQL Server VM. This is a practical guideline based on VMware’s recommendation to prefer right-sizing over CPU hot plug and to avoid using CPU hot plug as a general practice.  
 
-Infrastructure Preparation
+What to check
+If CPU Hot Add is enabled, confirm whether it is only present as a setting or whether CPU was actually resized online.
 
-Once the migration request is received, the Database Platform Support Team will:
+6. Review RAM sizing and SQL Server memory settings
 
-Infrastructure Alignment
-	•	Match CPU and memory allocation
-	•	Replicate storage layout
-	•	Validate performance characteristics
+SQL Server will use memory aggressively, so RAM settings should always be reviewed on purpose. Microsoft says that before setting max server memory, you should review the overall memory needs of the server and leave room for Windows and memory allocations outside SQL Server’s direct memory controls. Microsoft also provides a practical starting approach: first reserve memory for the OS, then subtract additional memory for other allocations outside max server memory, and use what remains as the SQL Server setting.  
 
-Availability Group Preparation
-	•	Join new instances to the Availability Group
-	•	Configure database synchronization
-	•	Monitor replication health and readiness
+Typical finding
+A SQL Server VM is given a large amount of RAM because “SQL Server will use it anyway.” Later nobody checks whether the workload actually needs that much memory, and max server memory was never reviewed. The VM may still run, but the configuration is no longer intentional.  
 
-Databases are typically synchronized before the planned cutover.
+Team guideline
+Do not treat large RAM allocation as automatically good. During review, check both the amount of RAM assigned to the VM and the SQL Server memory settings inside the guest. Microsoft explicitly recommends reviewing max server memory rather than leaving it unchecked.  
 
-⸻
+What to check
 
-Final Cutover Process
+* Is the amount of RAM assigned to the VM based on real need?
+* Has max server memory been reviewed?
+* Does the OS still have enough headroom?  
 
-The final migration phase consists of:
-	1.	Planned application downtime.
-	2.	Suspension of all write activity to databases.
-	3.	Controlled failover to upgraded SQL Server instances.
-	4.	Validation of application functionality.
+7. Do not leave max server memory without review
 
-Because the listener remains unchanged:
-	•	Applications usually reconnect automatically.
-	•	Downtime is limited to the maintenance window.
+A very common review finding is that the VM has plenty of RAM, but SQL Server memory limits were never checked after deployment. Microsoft says max server memory should be used to account for the needs of the operating system and other applications or components on the same host. The settings take effect without a server restart, so this is something that can be reviewed and corrected without treating it like a rebuild task.  
 
-⸻
+Typical finding
+The VM has 64 GB or 128 GB of RAM, but SQL Server max memory is still at a default or previously unreviewed value. Over time SQL Server consumes memory as expected, but Windows has less headroom than the team assumed.  
 
-Failback and Rollback Considerations
+What to check
+Inside SQL Server, confirm that max server memory reflects a deliberate choice and not a forgotten default.
 
-No Standard Failback
+8. Treat min server memory as optional, but deliberate
 
-After failover to SQL Server 2019/2022:
-	•	Failback to SQL Server 2016 is not supported.
-	•	Database internal version changes prevent backward synchronization.
-	•	This should be considered a one-way upgrade.
+min server memory does not need to be used everywhere, but Microsoft says it can be important in virtualized environments because it helps reduce the risk that host memory pressure causes SQL Server to deallocate memory from the guest beyond what is acceptable for performance. Microsoft also says SQL Server is not guaranteed to allocate the min amount at startup.  
 
-⸻
+Typical finding
+A team configured min server memory, but only because they assumed it should always be close to max server memory. That is not the intended reason to use it. Microsoft’s guidance describes min as a control for memory retention under load, not a simple mirror of max.  
 
-Emergency Rollback Scenario (Limited Conditions)
+Team guideline
+If min server memory is used, it should be configured deliberately and only after understanding why it is needed in that VM.  
 
-A rollback may be technically possible only if:
-	•	Failover has completed, but
-	•	No production write activity has resumed.
+9. Check VMware Tools
 
-In this scenario:
-	•	SQL Server 2016 databases remain in restoring state.
-	•	They can be removed from the Availability Group.
-	•	Database recovery can be performed manually.
-	•	The original Availability Group can be rebuilt if required.
+VMware says it is critical that customers regularly upgrade or update VMware Tools for production VMs. The guide notes that VMware Tools delivers bug fixes, stability fixes, security fixes, and other enhancements for devices such as VMXNET3 and PVSCSI. It also says VMware strongly encourages incorporating VMware Tools servicing into standard lifecycle management.  
 
-This option:
-	•	Is operationally complex
-	•	Is not guaranteed
-	•	Should only be treated as an emergency fallback
+Typical finding
+The SQL Server VM looks stable and there is no obvious outage, but VMware Tools is several versions behind. That may not explain every performance issue, but it is still a review finding worth planning for maintenance.  
 
-⸻
+Where to check in vCenter
+VM Summary → VMware Tools status
 
-Important Technical Note
+10. Check VM compatibility / hardware version
 
-Even without application writes, SQL Server may generate internal log records related to:
-	•	Statistics updates
-	•	Metadata adjustments
-	•	Background system processes
+VMware says VM compatibility determines the virtual hardware available to the VM, including CPU and memory characteristics, and recommends upgrading compatibility when new physical hardware is introduced to the environment. VMware also says this should be planned carefully, with backup and VMware Tools review as part of the process.  
 
-If such changes occur, rollback may no longer be feasible.
+Typical finding
+The SQL Server VM was built years ago, the platform was later upgraded, but the VM hardware version was never revisited. The VM still runs, so the issue stays invisible until someone performs a broader review.  
 
-⸻
+What to check
+Verify whether the VM compatibility level still matches the current platform standard.
 
-Customer Responsibilities Before Cutover
+11. Check the SCSI controller type
 
-Customers should ensure:
-	•	All instance-level objects are migrated:
-	•	Logins
-	•	SQL Agent jobs
-	•	Linked servers
-	•	SSIS packages
-	•	Credentials and server-level configurations
-	•	Applications are tested against the new SQL Server version.
-	•	Deprecated features are reviewed.
-	•	Operational readiness is confirmed before cutover.
+For SQL Server disks, the controller type should be reviewed rather than ignored. VMware’s guide calls out the VMware Paravirtualized SCSI Controller, PVSCSI, and notes that queue depth can be tuned for maximum performance. Even if deeper queue tuning is outside the scope of a simple review, the controller type itself is still worth checking.  
 
-⸻
+Typical finding
+A production SQL Server VM has separate disks for OS, data, and log files, but the SQL disks are not attached using the controller type the team normally expects for database workloads. Even if the VM is working, this is still a useful review point.  
 
-Summary
+Team guideline
+SQL Server data, log, and TempDB disks should normally use PVSCSI unless there is a clear reason not to. VMware’s guide discusses PVSCSI specifically in the context of improved I/O capability and queue depth options.  
 
-This migration approach provides:
-	•	Controlled upgrade from SQL Server 2016
-	•	Reduced operational risk
-	•	Minimal downtime migration capability
-	•	Infrastructure consistency
-	•	Continued use of existing listener connectivity
+Where to check in vCenter
+VM → Edit Settings → SCSI controller
 
-Proper preparation on both the platform and customer sides is essential for a successful migration.
+12. Check whether disks are Thin or Thick provisioned
 
-⸻
+Disk provisioning type should also be reviewed. For SQL Server, this is less about chasing perfection and more about making sure the choice was understood. VMware’s SQL Server guide includes storage best practices and discusses provisioning behavior and performance characteristics in the storage sections of the paper.  
+
+Typical finding
+A production SQL Server VM uses thin-provisioned database disks. That does not automatically mean the VM is wrong, but it should not be ignored either. During review, this should be identified and discussed, especially if the VM hosts an important workload.  
+
+Team guideline
+As a practical review expectation, SQL database disks should usually be reviewed more favorably when they are Thick Provision Lazy Zeroed or Eager Zeroed Thick rather than Thin. This is a practical interpretation of VMware’s storage guidance rather than a direct quote from a single line in the paper.  
+
+Where to check in vCenter
+VM → Edit Settings → Hard disk details
+
+13. Quick review checklist
+
+When a SQL Server VM is under review, check these points:
+
+* Does the VM look oversized compared with its real workload?  
+* Does the CPU layout make sense, or is it split into too many small sockets?  
+* Does the VM still look sensible when CPU and RAM are considered together?  
+* If CPU Hot Add is enabled, was it actually used, and were CPU changes normally made offline?  
+* Is RAM sized intentionally, and has max server memory been reviewed?  
+* If min server memory is used, was it configured for a reason?  
+* Are VMware Tools current?  
+* Is the VM compatibility level still current?  
+* Are SQL disks attached using the expected SCSI controller type?  
+* Are database disks thin or thick provisioned?  
+
+Closing note
+
+The main purpose of this guide is simple: when a SQL Server VM is being reviewed, do not treat it like a generic Windows VM. Focus on the settings that are most likely to matter in practice: sensible sizing, sensible CPU layout, deliberate SQL Server memory configuration, current VMware components, and storage settings appropriate for database workloads. That is the most useful starting point for a simple health check, troubleshooting session, or performance review.  
+
+If you want, I can next turn this into a polished Confluence version with headings like What to check / Why it matters / Typical finding / Where to check in vCenter.
