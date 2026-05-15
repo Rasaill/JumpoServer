@@ -1,0 +1,746 @@
+# Platform Health Framework — High-Level Concept
+
+## 1. Purpose
+
+The purpose of this initiative is to design a local platform health monitoring framework that can collect operational data from multiple servers and SQL Server instances within a given location, evaluate the collected data against defined rules, and present the results in Grafana dashboards.
+
+The solution is intended to cover both standard operational monitoring scenarios and customer-specific platform checks that may not be fully covered by a standard observability tool.
+
+The main goal is to provide a flexible and extensible framework that can answer questions such as:
+
+* Are all required SQL Server services up and running?
+* Are all databases backed up according to the expected policy?
+* Are SQL Agent jobs running successfully?
+* Are monitored databases and instances in the expected state?
+* Are there enough free resources, such as disk space or available IP addresses in a subnet?
+* Is the local inventory fresh and aligned with the expected platform state?
+* Are there any deviations from defined operational rules?
+
+The solution should start simple, but it should be designed in a way that allows future extension into central reporting, advanced rule evaluation, AI-assisted analysis, and optional integration with enterprise observability platforms.
+
+---
+
+## 2. Working Name
+
+The proposed working name for the solution is:
+
+**Platform Health Framework**
+
+Alternative names that can be considered:
+
+* Local Platform Health Framework
+* DB Platform Health Framework
+* Platform Health & Compliance Framework
+* Operational Health Framework
+
+The preferred name is **Platform Health Framework**, because it is broad enough to cover monitoring, inventory, rule-based health evaluation, operational compliance, and future automation.
+
+---
+
+## 3. High-Level Architecture
+
+The initial architecture is based on the following principle:
+
+**One local Platform Health instance per location.**
+
+Each location will have its own local Platform Health server or technical SQL Server instance. This local instance will collect and store data for servers, SQL Server instances, databases, services, and other platform components located within the same location.
+
+The initial design does not assume one global central database for all locations. This avoids unnecessary dependencies on cross-location connectivity, firewall rules, and central system availability.
+
+High-level model:
+
+```text
+Location A
+  ├─ SQL Servers / Windows Servers / Network Sources
+  ├─ Local Platform Health Server
+  ├─ Local Platform Health DB
+  ├─ SSIS-based collectors
+  └─ Grafana dashboards
+
+Location B
+  ├─ SQL Servers / Windows Servers / Network Sources
+  ├─ Local Platform Health Server
+  ├─ Local Platform Health DB
+  ├─ SSIS-based collectors
+  └─ Grafana dashboards
+```
+
+The local Platform Health DB becomes the local source of truth for the health state of the platform in that location.
+
+---
+
+## 4. Deployment Model
+
+### 4.1 One Local Platform Health Server per Location
+
+Each location should have one local technical server or SQL Server instance responsible for the Platform Health Framework.
+
+This server will host or execute:
+
+* Platform Health DB
+* SQL Agent jobs
+* SSIS packages used as initial collectors
+* Local inventory snapshot
+* Collected operational data
+* Rule evaluation results
+* Grafana datasource
+
+The monitored SQL Server instances should not host their own Platform Health databases or local schedulers by default.
+
+This avoids:
+
+* Additional databases on customer/workload SQL Server instances
+* Confusion for users about internal platform databases
+* Multiple schedulers across many servers
+* Harder versioning and maintenance
+* Higher operational complexity
+
+Default model:
+
+```text
+Local Platform Health Server
+        |
+        | collects data from
+        v
+SQL01 / SQL02 / SQL03 / SQL04
+```
+
+---
+
+## 5. Local Platform Health DB
+
+Each location will have its own local Platform Health database.
+
+This database will store:
+
+* Local inventory snapshot
+* Collector configuration
+* Rule definitions and policies
+* Observed state collected from target systems
+* Rule evaluation results
+* Current health state
+* Historical health data
+* Collection run metadata
+* Retention/audit information
+
+The local Platform Health DB is not only a reporting database. It is also the configuration and state layer for the local monitoring framework.
+
+---
+
+## 6. Inventory Model
+
+The customer may already have a central inventory containing all servers and SQL Server instances. This central inventory should remain the authoritative source for server and instance information.
+
+However, local collectors should not query the central inventory during every collection cycle.
+
+Instead, each local Platform Health DB should maintain a local inventory snapshot for its own location.
+
+Recommended model:
+
+```text
+Central Inventory
+        |
+        | periodic sync / export / import
+        v
+Local Platform Health DB
+        |
+        v
+Collectors read local inventory snapshot
+```
+
+This allows local monitoring to continue even if the central inventory or the connection to it is temporarily unavailable.
+
+### 6.1 Inventory Synchronization
+
+Inventory synchronization should be handled as a separate process from regular health checks.
+
+Possible synchronization methods:
+
+* Scheduled pull from central inventory
+* Central export pushed to local location
+* File-based export/import
+* API-based sync
+* Future event-triggered sync after provisioning or decommissioning
+
+The local inventory should include information such as:
+
+* Location code
+* Server name
+* Environment
+* Server role
+* SQL instance name
+* Connection name / listener / port
+* Lifecycle status
+* Monitoring enabled flag
+* Last sync timestamp
+* Last seen timestamp
+
+### 6.2 Lifecycle Status
+
+Objects should not be immediately deleted from the local inventory when they are no longer found.
+
+Recommended lifecycle statuses:
+
+* Active
+* Maintenance
+* RetiredCandidate
+* Retired
+* Excluded
+* DiscoveredNotInInventory
+
+This prevents temporary connectivity issues from causing monitored objects to disappear from dashboards.
+
+---
+
+## 7. Initial Collection Mechanism
+
+For the initial implementation, the proposed collection mechanism is:
+
+**SQL Agent + SSIS Package**
+
+SQL Agent will run SSIS packages on a schedule. The SSIS packages will collect data from target SQL Server instances and write the results into the local Platform Health DB.
+
+Initial flow:
+
+```text
+SQL Agent schedule
+        |
+        v
+SSIS package
+        |
+        v
+Read target list from local Platform Health DB
+        |
+        v
+Collect data from SQL Server instances
+        |
+        v
+Write observed data to Platform Health DB
+        |
+        v
+Rule evaluation writes health results
+        |
+        v
+Grafana displays current health
+```
+
+SSIS is considered a practical first collector technology, especially for SQL-focused checks such as:
+
+* Database backup state
+* SQL Agent job history
+* Database state
+* SQL Server instance inventory
+* SQL Server version/build information
+* Availability Group or log shipping status, if applicable
+
+---
+
+## 8. Collector-Agnostic Design
+
+The solution should not be tightly coupled to SSIS.
+
+SSIS is only the initial collection mechanism. The core of the solution should be the Platform Health DB model, rule evaluation logic, and standardized health results.
+
+The architecture should allow future collectors to be implemented using other technologies, such as:
+
+* PowerShell
+* Ansible/AWX
+* Python
+* API-based collectors
+* .NET Worker Service running as a Windows Service
+* Queue-based worker model
+
+Important design principle:
+
+```text
+Collector gathers.
+Rules evaluate.
+Database stores.
+Grafana visualizes.
+```
+
+Collectors should gather observed state and store it in a standard format. They should not become the place where the whole platform logic is implemented.
+
+This approach allows the collection mechanism to be replaced later without redesigning the rule engine, dashboards, or storage model.
+
+---
+
+## 9. Future Collector Service Option
+
+As a future enhancement, the SSIS-based mechanism could be replaced or complemented by a dedicated collector service.
+
+The recommended technology for a Windows-based collector service would be:
+
+**C# / .NET Worker Service running as a Windows Service**
+
+This service would run once per location, not on every monitored server by default.
+
+Conceptual model:
+
+```text
+Platform Health Collector Service
+        |
+        | reads target list from Platform Health DB
+        |
+        | collects data from SQL/Windows/API sources
+        v
+Platform Health DB
+```
+
+A local service may provide better support for:
+
+* Internal scheduling
+* Retry logic
+* Timeouts
+* Parallel execution
+* Queue-based execution
+* Manual re-checks
+* Event-triggered checks
+* More complex non-SQL checks
+
+However, this is not required for the initial MVP.
+
+---
+
+## 10. Scheduling and Triggers
+
+The initial implementation should use scheduled collection.
+
+Example frequency tiers:
+
+```text
+Frequent health checks       every 5–15 minutes
+Operational checks           every 15–60 minutes
+Inventory/discovery checks   hourly or daily
+Full inventory refresh       daily
+```
+
+Initial triggers:
+
+* SQL Agent scheduled jobs
+
+Future triggers:
+
+* Manual re-check
+* Event after provisioning
+* Event after decommissioning
+* Event after patching
+* Event after failover
+* Queue-based task execution
+
+The scheduler should not maintain a static list of servers or instances. It should only run a specific collector. The collector should dynamically resolve its targets from the local inventory stored in Platform Health DB.
+
+---
+
+## 11. Rule Engine Concept
+
+The Platform Health Framework should be rule-based.
+
+The goal of the rule engine is to compare the observed state of the platform with the expected state defined by operational rules and policies.
+
+Core principle:
+
+```text
+Observed State + Expected State = Health Result
+```
+
+Example:
+
+```text
+Observed:
+SQL Agent service is stopped.
+
+Expected:
+SQL Agent service should be running on PRD SQL Servers.
+
+Health Result:
+CRITICAL — SQL Agent service is stopped but expected state is Running.
+```
+
+The rule engine should produce standardized results that can be displayed in Grafana and later used by reporting, alerting, or AI-assisted analysis.
+
+---
+
+## 12. Data Storage Model
+
+The storage model should separate the following layers:
+
+```text
+Inventory
+Observed State
+Rules / Policies
+Health Results
+Current State
+History
+```
+
+### 12.1 Inventory
+
+Inventory describes what exists and what should be monitored.
+
+Examples:
+
+* Servers
+* SQL Server instances
+* Databases
+* Services
+* Subnets
+* Platform components
+
+### 12.2 Observed State
+
+Observed state is the raw or semi-raw data collected from target systems.
+
+Examples:
+
+For services:
+
+```text
+ServerName
+ServiceName
+ObservedState
+StartMode
+ServiceAccount
+ObservedAt
+CollectionStatus
+```
+
+For database backups:
+
+```text
+ServerName
+InstanceName
+DatabaseName
+RecoveryModel
+LastFullBackup
+LastDiffBackup
+LastLogBackup
+ObservedAt
+CollectionStatus
+```
+
+Observed state should be stored historically rather than overwritten.
+
+### 12.3 Rules / Policies
+
+Rules define the expected state.
+
+There should be one central rule catalog, for example:
+
+```text
+Rules.RuleDefinition
+```
+
+This catalog defines what rules exist, for example:
+
+* SQLServiceExpectedState
+* DatabaseBackupCompliance
+* SQLAgentJobHealth
+* DatabaseStateExpected
+* SubnetCapacityThreshold
+
+However, rule parameters should be stored in domain-specific policy tables.
+
+Examples:
+
+```text
+Rules.ServiceExpectedStatePolicy
+Rules.BackupPolicy
+Rules.RuleOverride
+Rules.RuleExclusion
+```
+
+This avoids forcing all rule types into one overly generic table.
+
+### 12.4 Health Results
+
+All evaluated rule results should be stored in a common standardized format.
+
+Recommended model:
+
+```text
+Health.CheckResultHistory
+Health.CurrentCheckResult or Health.vCurrentCheckResult
+```
+
+A health result should contain information such as:
+
+* Location
+* Rule name
+* Object type
+* Object name
+* Status
+* Severity
+* Observed value
+* Expected value
+* Reason
+* CheckedAt
+* EvaluatedAt
+* CollectionRunId
+
+---
+
+## 13. Historical Data and Current State
+
+The solution should store historical data, not only overwrite the latest state.
+
+Recommended approach:
+
+```text
+History table = append-only historical results
+Current view/table = latest known state for dashboards
+Retention job = cleanup after defined period
+```
+
+This allows the platform team to answer questions such as:
+
+* When did the issue start?
+* How often does a backup compliance issue occur?
+* Was the problem temporary or recurring?
+* Did the issue appear after maintenance or patching?
+* Is capacity usage trending in the wrong direction?
+
+### 13.1 Current State
+
+Grafana should primarily use current-state views or tables for operational dashboards.
+
+Possible options:
+
+* Use a view that selects the latest result per object and rule
+* Maintain a separate `CurrentCheckResult` table updated during each evaluation
+
+For MVP, a current-state view may be sufficient. If the volume grows, a dedicated current-state table can be introduced for better dashboard performance.
+
+### 13.2 Retention
+
+Retention should be implemented from the beginning.
+
+Example retention model:
+
+```text
+Observed raw data:        30 days
+Health result history:   90 days
+Collection run metadata: 90 days
+Daily summaries:         1 year
+Current status:          no retention, always latest state
+```
+
+Retention values can be adjusted based on customer requirements and data volume.
+
+---
+
+## 14. Rule Definition vs Rule Data
+
+The framework should not create a completely separate result table for every rule.
+
+Recommended approach:
+
+```text
+Observed data: domain-specific tables
+Rule definitions: common rule catalog + domain-specific policy tables
+Health results: common standardized table
+```
+
+Example for service checks:
+
+```text
+Observed.ServiceStateHistory
+Rules.ServiceExpectedStatePolicy
+Health.CheckResultHistory
+```
+
+Example for backup checks:
+
+```text
+Observed.DatabaseBackupStateHistory
+Rules.BackupPolicy
+Health.CheckResultHistory
+```
+
+This provides a good balance between flexibility and maintainability.
+
+---
+
+## 15. Status Model
+
+All rule evaluations should use a common status model.
+
+Recommended statuses:
+
+```text
+OK
+WARNING
+CRITICAL
+UNKNOWN
+SKIPPED
+EXCLUDED
+```
+
+Meaning:
+
+```text
+OK        The rule is satisfied.
+WARNING   A non-critical issue was detected.
+CRITICAL  A critical issue was detected and should be reviewed.
+UNKNOWN   The state could not be evaluated, for example due to missing data.
+SKIPPED   The check was intentionally skipped, for example because a dependency is unavailable.
+EXCLUDED  The object is intentionally excluded from this rule.
+```
+
+Each result should include a clear reason.
+
+Example:
+
+```text
+CRITICAL — Last log backup is 42 minutes old. Expected maximum age is 15 minutes.
+```
+
+or:
+
+```text
+WARNING — SQL Agent service is stopped on QA instance. Expected state is Running.
+```
+
+The reason field is important for operators, reporting, and future AI-assisted analysis.
+
+---
+
+## 16. Example Use Case: SQL Services
+
+### Observed State
+
+The collector gathers the current state of services, for example:
+
+```text
+SQL01 | SQLSERVERAGENT | Stopped | Automatic | DOMAIN\gmsa_sql$ | 2026-05-15 12:05
+```
+
+### Expected State
+
+The rule policy defines what is expected:
+
+```text
+PRD | SQL | SQLSERVERAGENT | Running | Critical
+QA  | SQL | SQLSERVERAGENT | Running | Warning
+```
+
+### Evaluation Result
+
+The rule engine evaluates the result:
+
+```text
+Rule: SQLServiceExpectedState
+Object: SQL01\SQLSERVERAGENT
+Status: CRITICAL
+Reason: SQLSERVERAGENT is Stopped. Expected state is Running.
+```
+
+---
+
+## 17. Example Use Case: Database Backups
+
+### Observed State
+
+The collector gathers backup information from SQL Server, for example from `msdb`:
+
+```text
+SQL01 | MSSQLSERVER | AppDB | FULL | LastFullBackup: 2026-05-15 01:00 | LastLogBackup: 2026-05-15 11:18
+```
+
+### Expected State
+
+The backup policy defines expected maximum age:
+
+```text
+PRD | FULL   | Full backup <= 24h | Log backup <= 15 min | Critical
+QA  | FULL   | Full backup <= 48h | Log backup <= 60 min | Warning
+DEV | SIMPLE | Full backup <= 72h | Log backup not required | Warning
+```
+
+### Evaluation Result
+
+The rule engine evaluates the backup state:
+
+```text
+Rule: DatabaseBackupCompliance
+Object: SQL01\MSSQLSERVER\AppDB
+Status: CRITICAL
+Reason: Last log backup is 42 minutes old. Expected maximum age is 15 minutes. Last full backup is OK.
+```
+
+---
+
+## 18. Collection Run Metadata
+
+Each collector execution should be tracked.
+
+A collection run table should store information such as:
+
+* CollectionRunId
+* Collector name
+* Collector type
+* StartedAt
+* FinishedAt
+* Status
+* Number of targets
+* Number of successful targets
+* Number of failed targets
+* Error message
+* Collector version
+
+This allows the team to monitor not only the platform, but also the monitoring process itself.
+
+Collector freshness should also be visible in Grafana.
+
+Example:
+
+```text
+Last successful BackupCollector run: 8 minutes ago — OK
+Last successful InventorySync run: 2 days ago — WARNING
+```
+
+---
+
+## 19. Security Model
+
+A dedicated service account or Group Managed Service Account should be used per location.
+
+Preferred model:
+
+```text
+DOMAIN\svc_ph_<location>
+```
+
+or:
+
+```text
+DOMAIN\gmsa_ph_<location>$
+```
+
+The account should run the local collectors and connect to SQL Server instances within the same location.
+
+Principles:
+
+* Use one dedicated account/GMSA per location.
+* Assign permissions through domain groups where possible.
+* Do not grant sysadmin on monitored SQL Server instances.
+* Grant only read/monitoring permissions on target SQL instances.
+* Grant write permissions only to the local Platform Health DB.
+* Separate permissions for monitored targets and the Platform Health DB.
+
+Example permission model:
+
+```text
+Target SQL instances:
+  read-only monitoring permissions
+
+Local Platform Health DB:
+  read inventory/configuration
+  write observed state and health results
+```
+
+---
+
+## 20. Grafana Dashboards
+
+Grafana will be the initial visualizat
