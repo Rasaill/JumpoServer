@@ -741,6 +741,199 @@ Local Platform Health DB:
 
 ---
 
-## 20. Grafana Dashboards
+20. Grafana Dashboards
 
-Grafana will be the initial visualizat
+Grafana will be the initial visualization layer.
+
+Initial dashboard areas:
+
+Location Overview
+
+Overall location health
+
+Critical findings count
+
+Warning findings count
+
+Unknown/skipped checks
+
+Collector freshness
+
+Inventory freshness
+
+SQL Operational Health
+
+SQL services status
+
+SQL Agent status
+
+Database backup compliance
+
+SQL Agent job health
+
+Database state
+
+Instance reachability
+
+Capacity / Infrastructure
+
+Disk capacity
+
+Database/file growth indicators
+
+Subnet free IP capacity
+
+Resource thresholds
+
+Grafana should primarily read from current-state views or tables, while historical tables can be used for trends and reporting.
+
+21. Initial MVP Scope
+
+The MVP should be intentionally limited to a small number of high-value checks.
+
+Suggested MVP scope:
+
+1. SQL service status
+2. SQL Agent service status
+3. Database backup compliance
+4. SQL Agent job failures
+5. Collector freshness
+6. Inventory freshness
+
+This scope is sufficient to validate:
+
+Local Platform Health DB model
+
+Inventory snapshot
+
+SSIS-based data collection
+
+Rule evaluation model
+
+Historical and current-state storage
+
+Grafana dashboards
+
+Service account and connectivity model
+
+22. Future Enhancements
+
+After the local MVP is validated, the framework can be extended in several directions.
+
+Potential future enhancements:
+
+Central synchronization of selected health results from all locations
+
+Central cross-location dashboard
+
+More advanced rule engine
+
+Queue-based collection model
+
+.NET Worker Service collector
+
+Event-triggered checks after provisioning or failover
+
+On-demand manual re-checks
+
+Integration with New Relic or another enterprise observability platform
+
+Capacity forecasting
+
+AI-assisted analysis
+
+23. AI-Assisted Operations — Future Option
+
+AI can be introduced later as an assistant layer on top of Platform Health data.
+
+The deterministic rule engine should remain the source of truth for statuses. AI should not decide whether something is OK or CRITICAL. Instead, AI can help operators understand and act on the results.
+
+Recommended principle:
+
+Rules decide.
+AI explains.
+Human approves actions.
+
+Potential AI use cases:
+
+Summarize the current health of a location
+
+Explain why a specific object is in WARNING or CRITICAL state
+
+Correlate related findings into likely incidents
+
+Identify top risks in a location
+
+Generate customer-friendly health summaries
+
+Draft Jira tickets or incident descriptions
+
+Suggest troubleshooting steps based on internal runbooks
+
+Answer natural language questions about current health
+
+Example:
+
+Question:
+What is wrong in location PLKRK?
+
+AI-assisted answer:
+Location PLKRK is currently in WARNING state. The main issues are one PRD database outside the log backup policy and one subnet approaching the free IP threshold. SQL service health is otherwise normal and the inventory snapshot is fresh.
+
+AI should be treated as a supporting operational assistant, not as an autonomous remediation engine in the initial phases.
+
+24. Key Architectural Decisions
+
+Current agreed direction:
+
+The solution will be called Platform Health Framework.
+
+The framework will use one local Platform Health instance per location.
+
+Each location will have its own local Platform Health DB.
+
+A local inventory snapshot will be stored in the Platform Health DB.
+
+Central inventory remains the authoritative source, but local monitoring works from the local snapshot.
+
+Initial collection will be implemented using SQL Agent + SSIS packages.
+
+SSIS will act as an initial collector, not as the core rule engine.
+
+The architecture will remain collector-agnostic.
+
+Observed state will be stored historically.
+
+Current state will be exposed through views or dedicated current-state tables.
+
+Retention will be implemented for historical data.
+
+Rule definitions will be stored in a common rule catalog.
+
+Rule parameters will be stored in domain-specific policy tables.
+
+Health results will be stored in a common standardized table.
+
+Grafana will be used as the initial visualization layer.
+
+A dedicated domain service account or GMSA will be used per location.
+
+AI-assisted analysis can be considered as a future enhancement.
+
+25. Summary
+
+The Platform Health Framework is intended to provide a local, rule-based, extensible monitoring and health evaluation layer for each platform location.
+
+The first phase will focus on a simple but scalable model:
+
+Local Platform Health DB
+SQL Agent + SSIS collectors
+Rule-based health evaluation
+Historical and current-state storage
+Grafana dashboards
+
+The framework should be designed so that the initial SSIS-based collection mechanism can be replaced or extended in the future without changing the core data model, rule evaluation approach, or dashboards.
+
+The long-term value of the solution is not only in collecting metrics, but in creating a structured platform health layer that can support compliance checks, operational reporting, trend analysis, future central aggregation, and AI-assisted troubleshooting.
+
+
